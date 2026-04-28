@@ -1,7 +1,0 @@
-name = "qr-tracker"
-main = "worker.js"
-compatibility_date = "2024-01-01"
-
-[[kv_namespaces]]
-binding = "QR_KV"
-id     = "89a22257f97f49aebce88e299e622cf0"
