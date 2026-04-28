@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group Theory Concert — QR Scan Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+    }
+    header p {
+      color: #94a3b8;
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+    }
+    .badge {
+      display: inline-block;
+      margin-top: 0.6rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 9999px;
+      padding: 0.25rem 0.8rem;
+      font-size: 0.8rem;
+      color: #7dd3fc;
+    }
+
+    .main-grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    /* ── Stats cards ── */
+    .stat-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .stat-card .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+    }
+    .stat-card .value {
+      font-size: 2.6rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      line-height: 1;
+    }
+    .stat-card .sub {
+      font-size: 0.82rem;
+      color: #7dd3fc;
+    }
+
+    /* ── Chart ── */
+    .chart-card {
+      grid-column: 1 / -1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+    .chart-card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 1.25rem;
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 260px;
+    }
+
+    /* ── QR section ── */
+    .qr-card {
+      grid-column: 1 / -1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.75rem;
+      display: flex;
+      gap: 2.5rem;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .qr-box {
+      background: #fff;
+      border-radius: 0.75rem;
+      padding: 14px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-download {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+    .btn-download:hover { background: #2563eb; }
+    #qrcode canvas, #qrcode img { display: block; }
+    .qr-info { flex: 1; min-width: 220px; }
+    .qr-info h2 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 0.75rem; }
+    .qr-info dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; font-size: 0.88rem; }
+    .qr-info dt { color: #64748b; }
+    .qr-info dd { color: #cbd5e1; word-break: break-all; }
+    .note {
+      margin-top: 1.2rem;
+      background: #0f172a;
+      border-left: 3px solid #3b82f6;
+      padding: 0.75rem 1rem;
+      border-radius: 0 0.5rem 0.5rem 0;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
+
+    .last-updated {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.78rem;
+      color: #475569;
+    }
+
+    @media (max-width: 680px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .chart-card, .qr-card { grid-column: 1; }
+    }
+      .range-btns { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+      .range-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; border-radius: 0.5rem; padding: 0.3rem 0.9rem; font-size: 0.82rem; cursor: pointer; }
+      .range-btn.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }  
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Group Theory</h1>
+  <p>QR Code Scan Tracker &mdash; Max Perkins</p>
+  <span class="badge">Concert: June 14, 2025</span>
+</header>
+
+<div class="main-grid">
+
+  <!-- Stat cards -->
+  <div class="stat-card">
+    <span class="label">Today</span>
+    <span class="value" id="stat-today">—</span>
+    <span class="sub">scans so far</span>
+  </div>
+  <div class="stat-card">
+    <span class="label">Last 7 Days</span>
+    <span class="value" id="stat-7d">—</span>
+    <span class="sub">total scans</span>
+  </div>
+  <div class="stat-card">
+    <span class="label">Last 30 Days</span>
+    <span class="value" id="stat-30d">—</span>
+    <span class="sub">total scans</span>
+  </div>
+
+  <!-- Bar chart -->
+  <div class="chart-card">
+    <h2>Daily Scans</h2>
+<div class="range-btns">
+  <button class="range-btn active" onclick="setRange(30, this)">30d</button>
+  <button class="range-btn" onclick="setRange(60, this)">60d</button>
+  <button class="range-btn" onclick="setRange(90, this)">90d</button>
+</div>
+    <div class="chart-wrapper">
+      <canvas id="scansChart"></canvas>
+    </div>
+  </div>
+
+  <!-- QR code -->
+  <div class="qr-card">
+    <div class="qr-box">
+      <div id="qrcode"></div>
+      <button class="btn-download" onclick="downloadQR()">Download PNG</button>
+    </div>
+    <div class="qr-info">
+      <h2>Promo QR Code</h2>
+      <dl>
+        <dt>Artist</dt>    <dd>Group Theory</dd>
+        <dt>Date</dt>      <dd>June 14, 2025</dd>
+        <dt>Promoter</dt>  <dd>Max Perkins</dd>
+        <dt>Tracks to</dt> <dd id="qr-url">—</dd>
+      </dl>
+      <div class="note">
+  <strong>Live tracking active.</strong> Each scan hits the Cloudflare Worker,
+  increments today's count in KV, then redirects to the ticket page.
+  Data refreshes each time this dashboard is opened.
+</div>
+    </div>
+  </div>
+
+</div>
+
+<p class="last-updated" id="last-updated"></p>
+
+<script>
+  // ── Config ────────────────────────────────────────────────────
+const WORKER_URL = "https://qr-tracker.maxwellhperkins.workers.dev";
+const DEST_URL   = "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx";
+const TRACKING_URL = `${WORKER_URL}/track?dest=${encodeURIComponent(DEST_URL)}`;
+
+  // ── Chart ─────────────────────────────────────────────────────
+let chart = null;
+function setRange(days, btn) {
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadStats(days);
+}
+async function loadStats(numDays = 30) {
+  try {
+    const res = await fetch(`${WORKER_URL}/stats?days=${numDays}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { days, counts, total, today: todayCount } = await res.json();
+
+    const labels = days.map(d =>
+      new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    );
+
+    document.getElementById("stat-today").textContent = todayCount;
+    document.getElementById("stat-7d").textContent    = counts.slice(-7).reduce((a,b) => a+b, 0);
+    document.getElementById("stat-30d").textContent   = total;
+    document.getElementById("last-updated").textContent =
+      "Live data · Last refreshed " + new Date().toLocaleString();
+
+if (chart) chart.destroy();
+chart = new Chart(document.getElementById("scansChart").getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label: "Scans", data: counts,
+          backgroundColor: "rgba(125, 211, 252, 0.55)",
+          borderColor: "rgba(125, 211, 252, 0.9)",
+          borderWidth: 1, borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => ` ${c.parsed.y} scans` } } },
+        scales: {
+          x: { ticks: { color: "#64748b", maxTicksLimit: 10, font: { size: 11 } }, grid: { color: "#1e293b" } },
+          y: { beginAtZero: true, ticks: { color: "#64748b", font: { size: 11 } }, grid: { color: "#263347" } }
+        }
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    document.getElementById("last-updated").textContent = "Could not load live data — check WORKER_URL";
+  }
+}
+
+loadStats();
+
+  // ── QR Code ───────────────────────────────────────────────────
+  document.getElementById("qr-url").textContent = TRACKING_URL;
+  new QRCode(document.getElementById("qrcode"), {
+    text: TRACKING_URL,
+    width: 180,
+    height: 180,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  function downloadQR() {
+    const canvas = document.querySelector("#qrcode canvas");
+    const link = document.createElement("a");
+    link.download = "group-theory-qr.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }
+</script>
+</body>
+</html>
