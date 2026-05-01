@@ -367,8 +367,16 @@ const DEFAULT_EVENTS = [
   // ══════════════════════════════════════════════════════════════
   const activeEvent = () => EVENTS.find(e => e.id === activeEventId);
   const activeCode  = () => activeEvent()?.codes.find(c => c.id === activeCodeId);
-  const trackingUrl = (code) =>
-    `${WORKER_URL}/track?qr=${encodeURIComponent(code.id)}&dest=${encodeURIComponent(code.dest)}`;
+const trackingUrl = (code) =>
+    `${WORKER_URL}/track?qr=${encodeURIComponent(code.id)}`;
+
+  async function pushDestination(codeId, dest) {
+    const res = await fetch(
+      `${WORKER_URL}/destination?qr=${encodeURIComponent(codeId)}&url=${encodeURIComponent(dest)}`,
+      { method: 'PUT' }
+    );
+    if (!res.ok) throw new Error(`Worker returned ${res.status}`);
+  }
 
   // ══════════════════════════════════════════════════════════════
   // RENDER — Event tabs
@@ -466,13 +474,18 @@ activeEventId = btn.dataset.event;
                 ${ev.codes.length===0
                   ? `<div style="color:#475569;font-size:0.78rem;padding:0.5rem 0">No QR codes yet.</div>`
                   : ev.codes.map(code=>`
-                      <div class="code-item">
-                        <div class="code-item-info">
-                          <div class="code-item-label">${code.label}</div>
-                          <div class="code-item-meta">${code.type} · ID: ${code.id}</div>
-                          <div class="code-item-meta" style="margin-top:2px">${code.dest}</div>
+<div class="code-item" style="flex-direction:column;align-items:stretch;gap:0.5rem">
+                        <div style="display:flex;align-items:center;gap:0.75rem">
+                          <div class="code-item-info">
+                            <div class="code-item-label">${code.label}</div>
+                            <div class="code-item-meta">${code.type} · ID: ${code.id}</div>
+                          </div>
+                          <button class="mgr-btn danger" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.6rem" data-delete-code="${code.id}" data-evid="${ev.id}">Delete</button>
                         </div>
-                        <button class="mgr-btn danger" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.6rem" data-delete-code="${code.id}" data-evid="${ev.id}">Delete</button>
+                        <div style="display:flex;gap:0.5rem;align-items:center">
+                          <input class="mgr-input" id="dest-input-${code.id}" value="${code.dest}" placeholder="https://…" style="flex:1;font-size:0.78rem;padding:0.35rem 0.6rem"/>
+                          <button class="mgr-btn primary" style="flex-shrink:0;font-size:0.72rem;padding:0.35rem 0.7rem;white-space:nowrap" data-update-dest="${code.id}">↑ Update Live</button>
+                        </div>
                       </div>`).join("")}
               </div>
             </div>
@@ -572,11 +585,34 @@ activeEventId = btn.dataset.event;
         if (!label) { showToast("⚠ Label required"); return; }
         if (!dest || !dest.startsWith("http")) { showToast("⚠ Valid URL required"); return; }
         const id = rawId || slugify(evId)+"-"+slugify(label);
-        if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code ID already exists — edit the ID field"); return; }
-ev.codes.push({ id, label, type, dest });
+if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code ID already exists — edit the ID field"); return; }
+        ev.codes.push({ id, label, type, dest });
         if (!activeCodeId && activeEventId===evId) activeCodeId = id;
         persistEvents(); renderAll();
-        showToast("✓ QR code added");
+        pushDestination(id, dest)
+          .then(() => showToast("✓ QR code added & destination live"))
+          .catch(() => showToast("✓ QR code added — ⚠ Worker sync failed, check WORKER_URL"));
+      });
+    });
+
+    // Update destination live
+    body.querySelectorAll("[data-update-dest]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const codeId = btn.dataset.updateDest;
+        const input  = document.getElementById(`dest-input-${codeId}`);
+        const newDest = input.value.trim();
+        if (!newDest || !newDest.startsWith("http")) { showToast("⚠ Valid URL required"); return; }
+        const ev = EVENTS.find(e => e.codes.some(c => c.id === codeId));
+        const code = ev?.codes.find(c => c.id === codeId);
+        if (!code) return;
+        try {
+          await pushDestination(codeId, newDest);
+          code.dest = newDest;
+          persistEvents();
+          showToast("✓ Destination updated live");
+        } catch {
+          showToast("⚠ Worker sync failed — destination not updated");
+        }
       });
     });
 

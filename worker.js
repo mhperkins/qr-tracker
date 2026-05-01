@@ -12,8 +12,18 @@ if (url.pathname === '/track') {
       const key   = `${qr}:day:${today}`;
       const count = parseInt((await env.QR_KV.get(key)) || '0') + 1;
       await env.QR_KV.put(key, String(count));
-      const dest  = url.searchParams.get('dest') || 'https://github.com/mhperkins';
+      const dest  = await env.QR_KV.get(`${qr}:dest`);
+      if (!dest) return new Response('QR destination not configured.', { status: 404 });
       return Response.redirect(dest, 302);
+    }
+
+    if (url.pathname === '/destination') {
+      if (request.method !== 'PUT') return new Response('Method not allowed', { status: 405 });
+      const qr  = url.searchParams.get('qr');
+      const dst = url.searchParams.get('url');
+      if (!qr || !dst || !dst.startsWith('http')) return new Response('Invalid params', { status: 400 });
+      await env.QR_KV.put(`${qr}:dest`, dst);
+      return new Response(JSON.stringify({ ok: true, qr, dest: dst }), { headers: CORS });
     }
 
 if (url.pathname === '/stats') {
