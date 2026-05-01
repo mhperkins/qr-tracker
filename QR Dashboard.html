@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QR Scan Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- qrcodejs removed — using qrserver.com image API instead -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+    }
+    header p {
+      color: #94a3b8;
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+    }
+    .badge {
+      display: inline-block;
+      margin-top: 0.6rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 9999px;
+      padding: 0.25rem 0.8rem;
+      font-size: 0.8rem;
+      color: #7dd3fc;
+    }
+
+    .main-grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    /* ── Stats cards ── */
+    .stat-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .stat-card .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+    }
+    .stat-card .value {
+      font-size: 2.6rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      line-height: 1;
+    }
+    .stat-card .sub {
+      font-size: 0.82rem;
+      color: #7dd3fc;
+    }
+
+    /* ── Chart ── */
+    .chart-card {
+      grid-column: 1 / -1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+    .chart-card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 1.25rem;
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 260px;
+    }
+
+    /* ── QR section ── */
+    .qr-card {
+      grid-column: 1 / -1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.75rem;
+      display: flex;
+      gap: 2.5rem;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .qr-box {
+      background: #fff;
+      border-radius: 0.75rem;
+      padding: 14px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-download {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.5rem 1.1rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+    .btn-download:hover { background: #2563eb; }
+    #qrcode canvas, #qrcode img { display: block; }
+    .qr-info { flex: 1; min-width: 220px; }
+    .qr-info h2 { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 0.75rem; }
+    .qr-info dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; font-size: 0.88rem; }
+    .qr-info dt { color: #64748b; }
+    .qr-info dd { color: #cbd5e1; word-break: break-all; }
+    .note {
+      margin-top: 1.2rem;
+      background: #0f172a;
+      border-left: 3px solid #3b82f6;
+      padding: 0.75rem 1rem;
+      border-radius: 0 0.5rem 0.5rem 0;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
+
+    .last-updated {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.78rem;
+      color: #475569;
+    }
+
+@media (max-width: 680px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .chart-card, .qr-card { grid-column: 1; }
+      .manage-btn span { display: none; }
+    }
+
+    .manage-btn {
+      position: absolute; top: 0; right: 0;
+      background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+      border-radius: 0.6rem; padding: 0.45rem 1rem; font-size: 0.82rem;
+      font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .manage-btn:hover { background: #273549; border-color: #3b82f6; color: #fff; }
+    header { position: relative; }
+
+    .mgr-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 900; display: none; justify-content: flex-end; }
+    .mgr-overlay.open { display: flex; }
+    .mgr-panel { width: 520px; max-width: 95vw; background: #0f1117; border-left: 1px solid #1e293b; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; animation: slideIn 0.2s ease; }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .mgr-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: #0f1117; z-index: 10; }
+    .mgr-header h2 { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .mgr-close { background: none; border: none; color: #64748b; font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0 4px; }
+    .mgr-close:hover { color: #f1f5f9; }
+    .mgr-body { padding: 1.25rem 1.5rem; flex: 1; }
+    .mgr-section-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; margin-top: 1.5rem; }
+    .mgr-section-hd:first-child { margin-top: 0; }
+    .mgr-section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; }
+    .mgr-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 0.5rem; padding: 0.3rem 0.8rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.12s; display: inline-flex; align-items: center; gap: 0.3rem; font-family: inherit; }
+    .mgr-btn:hover { background: #273549; border-color: #3b82f6; color: #7dd3fc; }
+    .mgr-btn.primary { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+    .mgr-btn.primary:hover { background: #1e40af; }
+    .mgr-btn.danger { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+    .mgr-btn.danger:hover { background: #7f1d1d; }
+    .mgr-btn.success { background: #052e16; border-color: #166534; color: #86efac; }
+    .mgr-btn.success:hover { background: #166534; }
+    .event-row { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; margin-bottom: 0.75rem; overflow: hidden; }
+    .event-row-hd { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem; cursor: pointer; user-select: none; }
+    .event-row-hd:hover { background: #273549; }
+    .event-row-name { flex: 1; font-size: 0.9rem; font-weight: 600; color: #f1f5f9; }
+    .event-row-meta { font-size: 0.75rem; color: #64748b; }
+    .event-row-chevron { color: #64748b; font-size: 0.8rem; transition: transform 0.15s; }
+    .event-row.expanded .event-row-chevron { transform: rotate(90deg); }
+    .event-row-body { display: none; padding: 0 1rem 1rem; border-top: 1px solid #0f172a; }
+    .event-row.expanded .event-row-body { display: block; }
+    .mgr-field { margin-bottom: 0.75rem; }
+    .mgr-label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 0.3rem; }
+    .mgr-input { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; color: #e2e8f0; padding: 0.5rem 0.75rem; font-size: 0.88rem; font-family: inherit; outline: none; transition: border-color 0.12s; }
+    .mgr-input:focus { border-color: #3b82f6; }
+    .mgr-input::placeholder { color: #475569; }
+    .mgr-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .code-list { margin-top: 0.85rem; }
+    .code-item { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.6rem; padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+    .code-item-info { flex: 1; min-width: 0; }
+    .code-item-label { font-size: 0.85rem; font-weight: 600; color: #cbd5e1; }
+    .code-item-meta { font-size: 0.72rem; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .add-code-form { background: #0f172a; border: 1px dashed #334155; border-radius: 0.6rem; padding: 1rem; margin-top: 0.75rem; display: none; }
+    .add-code-form.open { display: block; }
+    .add-event-form { background: #1e293b; border: 1px dashed #334155; border-radius: 0.75rem; padding: 1rem; margin-bottom: 0.75rem; display: none; }
+    .add-event-form.open { display: block; }
+    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 0.75rem 1.25rem; font-size: 0.85rem; font-weight: 600; color: #f1f5f9; z-index: 9999; box-shadow: 0 8px 30px rgba(0,0,0,0.4); display: none; }
+    .toast.show { display: block; }
+      .range-btns { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+      .range-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; border-radius: 0.5rem; padding: 0.3rem 0.9rem; font-size: 0.82rem; cursor: pointer; }
+.range-btn.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+
+    /* ── Event tabs ── */
+    .event-tabs { max-width: 1100px; margin: 0 auto 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .event-tab { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 0.6rem; padding: 0.45rem 1.1rem; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .event-tab:hover { background: #273549; color: #e2e8f0; }
+    .event-tab.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+
+    /* ── QR code grid ── */
+    .qr-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem; }
+    .qr-tile { background: #1e293b; border: 1px solid #334155; border-radius: 1rem; padding: 1.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; cursor: pointer; transition: border-color 0.15s; }
+    .qr-tile:hover { border-color: #3b82f6; }
+    .qr-tile.active { border-color: #7dd3fc; box-shadow: 0 0 0 2px rgba(125,211,252,0.2); }
+    .qr-tile-label { font-size: 0.88rem; font-weight: 600; color: #cbd5e1; text-align: center; }
+    .qr-tile-type { font-size: 0.75rem; color: #64748b; text-align: center; }
+    .qr-tile-count { font-size: 1.5rem; font-weight: 700; color: #7dd3fc; }
+    .qr-tile-box { background: #fff; border-radius: 0.5rem; padding: 8px; }
+
+    /* ── Selected QR detail ── */
+    .qr-detail { grid-column: 1 / -1; background: #1e293b; border: 1px solid #334155; border-radius: 1rem; padding: 1.75rem; display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+
+<header>
+  <button class="manage-btn" id="open-manager">⚙ <span>Manage Events</span></button>
+  <h1 id="hdr-title">QR Scan Dashboard</h1>
+  <p id="hdr-sub">QR Code Scan Tracker &mdash; Max Perkins</p>
+  <span class="badge" id="hdr-badge">Select an event</span>
+</header>
+
+<!-- Event tabs — rendered by JS -->
+<div class="event-tabs" id="event-tabs"></div>
+
+<div class="main-grid" id="main-grid">
+  <!-- Stat cards -->
+  <div class="stat-card">
+    <span class="label">Today</span>
+    <span class="value" id="stat-today">—</span>
+    <span class="sub">scans so far</span>
+  </div>
+  <div class="stat-card">
+    <span class="label">Last 7 Days</span>
+    <span class="value" id="stat-7d">—</span>
+    <span class="sub">total scans</span>
+  </div>
+  <div class="stat-card">
+    <span class="label">Last 30 Days</span>
+    <span class="value" id="stat-30d">—</span>
+    <span class="sub">total scans</span>
+  </div>
+
+  <!-- QR code grid — rendered by JS -->
+  <div class="qr-grid" id="qr-grid"></div>
+
+  <!-- Selected QR detail — rendered by JS -->
+  <div class="qr-detail" id="qr-detail" style="display:none"></div>
+
+  <!-- Bar chart -->
+  <div class="chart-card">
+    <h2 id="chart-title">Daily Scans</h2>
+    <div class="range-btns" id="range-btns">
+      <button class="range-btn active" data-days="30">30d</button>
+      <button class="range-btn" data-days="60">60d</button>
+      <button class="range-btn" data-days="90">90d</button>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="scansChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<p class="last-updated" id="last-updated"></p>
+
+<div class="mgr-overlay" id="mgr-overlay">
+  <div class="mgr-panel">
+    <div class="mgr-header">
+      <h2>⚙ Manage Events & QR Codes</h2>
+      <button class="mgr-close" id="mgr-close">×</button>
+    </div>
+    <div class="mgr-body" id="mgr-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+  // PERSISTENCE
+  // ══════════════════════════════════════════════════════════════
+  const STORAGE_KEY = "qr_dashboard_events";
+  function persistEvents() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(EVENTS)); } catch(e) {} }
+  function loadPersistedEvents() { try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch(e) {} return null; }
+
+  function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+  function showToast(msg) { const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2500); }
+
+  // ══════════════════════════════════════════════════════════════
+  // CONFIG — Edit this section to add events and QR codes.
+  // Each code.id must be unique across ALL events (used as the
+  // KV key in your Cloudflare Worker, e.g. ?qr=gt25-ig-bio).
+  // ══════════════════════════════════════════════════════════════
+  const WORKER_URL = "https://qr-tracker.maxwellhperkins.workers.dev";
+
+const DEFAULT_EVENTS = [
+    {
+      id:       "groove-theory-2026",
+      name:     "Groove Theory",
+      date:     "June 14, 2026",
+      promoter: "Maxwell Henry",
+      codes: [
+        {
+          id:    "gt25-GT-flyer",
+          label: "Concert Flyer",
+          type:  "Marketing",
+          dest:  "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx",
+        },
+        // Add more QR codes for this event here:
+        // { id: "gt25-flyer-mission", label: "Flyer — Mission District", type: "Physical — Flyer", dest: "https://..." },
+        // { id: "gt25-email",         label: "Email Blast",              type: "Email",           dest: "https://..." },
+      ],
+    },
+    // Add more events here:
+    // {
+    //   id: "next-event-2026",
+    //   name: "Next Event",
+    //   date: "August 10, 2026",
+    //   promoter: "Max Perkins",
+    //   codes: [
+    //     { id: "ne25-ig-bio", label: "Instagram Bio", type: "Social — Instagram", dest: "https://..." },
+    //   ],
+    // },
+  ];
+
+// ══════════════════════════════════════════════════════════════
+  // STATE
+  // ══════════════════════════════════════════════════════════════
+  let EVENTS = loadPersistedEvents() ?? DEFAULT_EVENTS;
+  let activeEventId = EVENTS[0]?.id ?? null;
+  let activeCodeId  = EVENTS[0]?.codes[0]?.id ?? null;
+  let activeDays    = 30;
+  let chart         = null;
+  let qrInstances   = {}; // keyed by code.id
+
+  // ══════════════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════════════
+  const activeEvent = () => EVENTS.find(e => e.id === activeEventId);
+  const activeCode  = () => activeEvent()?.codes.find(c => c.id === activeCodeId);
+  const trackingUrl = (code) =>
+    `${WORKER_URL}/track?qr=${encodeURIComponent(code.id)}&dest=${encodeURIComponent(code.dest)}`;
+
+  // ══════════════════════════════════════════════════════════════
+  // RENDER — Event tabs
+  // ══════════════════════════════════════════════════════════════
+  function renderTabs() {
+    const container = document.getElementById("event-tabs");
+    container.innerHTML = EVENTS.map(e => `
+      <button class="event-tab ${e.id === activeEventId ? "active" : ""}"
+              data-event="${e.id}">
+        ${e.name} <span style="opacity:0.6;font-weight:400">${e.date}</span>
+      </button>
+    `).join("");
+
+    container.querySelectorAll(".event-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+activeEventId = btn.dataset.event;
+        activeCodeId  = activeEvent()?.codes[0]?.id ?? null;
+        renderAll();
+      });
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // MANAGER — open/close
+  // ══════════════════════════════════════════════════════════════
+  document.getElementById("open-manager").addEventListener("click", () => {
+    document.getElementById("mgr-overlay").classList.add("open");
+    renderManager();
+  });
+  document.getElementById("mgr-close").addEventListener("click", () => {
+    document.getElementById("mgr-overlay").classList.remove("open");
+  });
+  document.getElementById("mgr-overlay").addEventListener("click", e => {
+    if (e.target === e.currentTarget) document.getElementById("mgr-overlay").classList.remove("open");
+  });
+
+  function renderManager() {
+    const body = document.getElementById("mgr-body");
+    body.innerHTML = `
+      <div class="mgr-section-hd">
+        <span class="mgr-section-title">Events (${EVENTS.length})</span>
+        <button class="mgr-btn primary" id="mgr-add-event-btn">+ Add Event</button>
+      </div>
+      <div class="add-event-form" id="add-event-form">
+        <div class="mgr-row">
+          <div class="mgr-field"><label class="mgr-label">Event Name *</label><input class="mgr-input" id="new-ev-name" placeholder="e.g. Summer Showcase"/></div>
+          <div class="mgr-field"><label class="mgr-label">Date</label><input class="mgr-input" id="new-ev-date" placeholder="e.g. August 10, 2026"/></div>
+        </div>
+        <div class="mgr-row">
+          <div class="mgr-field"><label class="mgr-label">Promoter</label><input class="mgr-input" id="new-ev-promoter" value="Max Perkins"/></div>
+          <div class="mgr-field"><label class="mgr-label">ID (auto)</label><input class="mgr-input" id="new-ev-id" placeholder="auto-generated"/></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+          <button class="mgr-btn primary" id="new-ev-save">Save Event</button>
+          <button class="mgr-btn" id="new-ev-cancel">Cancel</button>
+        </div>
+      </div>
+      <div id="events-list">
+        ${EVENTS.map(ev => `
+          <div class="event-row" id="ev-row-${ev.id}">
+            <div class="event-row-hd" data-evid="${ev.id}">
+              <span class="event-row-chevron">▶</span>
+              <span class="event-row-name">${ev.name}</span>
+              <span class="event-row-meta">${ev.date} · ${ev.codes.length} code${ev.codes.length!==1?"s":""}</span>
+              <button class="mgr-btn danger" style="font-size:0.72rem;padding:0.2rem 0.6rem" data-delete-event="${ev.id}">Delete</button>
+            </div>
+            <div class="event-row-body">
+              <div style="margin-top:0.85rem">
+                <div class="mgr-row">
+                  <div class="mgr-field"><label class="mgr-label">Name</label><input class="mgr-input" data-ev-field="name" data-evid="${ev.id}" value="${ev.name}"/></div>
+                  <div class="mgr-field"><label class="mgr-label">Date</label><input class="mgr-input" data-ev-field="date" data-evid="${ev.id}" value="${ev.date}"/></div>
+                </div>
+                <div class="mgr-row">
+                  <div class="mgr-field"><label class="mgr-label">Promoter</label><input class="mgr-input" data-ev-field="promoter" data-evid="${ev.id}" value="${ev.promoter}"/></div>
+                  <div class="mgr-field" style="display:flex;align-items:flex-end"><button class="mgr-btn success" data-save-event="${ev.id}" style="width:100%">Save Changes</button></div>
+                </div>
+              </div>
+              <div class="mgr-section-hd" style="margin-top:1rem">
+                <span class="mgr-section-title">QR Codes</span>
+                <button class="mgr-btn" data-add-code="${ev.id}">+ Add QR Code</button>
+              </div>
+              <div class="add-code-form" id="add-code-form-${ev.id}">
+                <div class="mgr-row">
+                  <div class="mgr-field"><label class="mgr-label">Label *</label><input class="mgr-input" id="nc-label-${ev.id}" placeholder="e.g. Instagram Bio"/></div>
+                  <div class="mgr-field"><label class="mgr-label">Type</label><input class="mgr-input" id="nc-type-${ev.id}" placeholder="e.g. Social — Instagram"/></div>
+                </div>
+                <div class="mgr-field"><label class="mgr-label">Destination URL *</label><input class="mgr-input" id="nc-dest-${ev.id}" placeholder="https://…"/></div>
+                <div class="mgr-field"><label class="mgr-label">Code ID (auto)</label><input class="mgr-input" id="nc-id-${ev.id}" placeholder="auto-generated"/></div>
+                <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+                  <button class="mgr-btn primary" data-save-code="${ev.id}">Save QR Code</button>
+                  <button class="mgr-btn" data-cancel-code="${ev.id}">Cancel</button>
+                </div>
+              </div>
+              <div class="code-list">
+                ${ev.codes.length===0
+                  ? `<div style="color:#475569;font-size:0.78rem;padding:0.5rem 0">No QR codes yet.</div>`
+                  : ev.codes.map(code=>`
+                      <div class="code-item">
+                        <div class="code-item-info">
+                          <div class="code-item-label">${code.label}</div>
+                          <div class="code-item-meta">${code.type} · ID: ${code.id}</div>
+                          <div class="code-item-meta" style="margin-top:2px">${code.dest}</div>
+                        </div>
+                        <button class="mgr-btn danger" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.6rem" data-delete-code="${code.id}" data-evid="${ev.id}">Delete</button>
+                      </div>`).join("")}
+              </div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #1e293b">
+        <div class="mgr-section-hd" style="margin-top:0"><span class="mgr-section-title">Data</span></div>
+        <p style="font-size:0.78rem;color:#64748b;margin-bottom:0.75rem;line-height:1.6">Events and QR codes are saved in localStorage. Export to back up.</p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="mgr-btn success" id="mgr-export">↓ Export JSON</button>
+          <button class="mgr-btn" id="mgr-import-btn">↑ Import JSON</button>
+        </div>
+        <textarea class="mgr-input" id="mgr-import-area" rows="5" style="display:none;margin-top:0.75rem;font-family:monospace;font-size:0.78rem" placeholder="Paste exported JSON here…"></textarea>
+        <div id="mgr-import-actions" style="display:none;margin-top:0.5rem;gap:0.5rem">
+          <button class="mgr-btn primary" id="mgr-import-confirm">Import</button>
+          <button class="mgr-btn" id="mgr-import-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    // Add event form
+    document.getElementById("mgr-add-event-btn").addEventListener("click", () => document.getElementById("add-event-form").classList.toggle("open"));
+    document.getElementById("new-ev-cancel").addEventListener("click", () => document.getElementById("add-event-form").classList.remove("open"));
+    document.getElementById("new-ev-name").addEventListener("input", e => {
+      const id = document.getElementById("new-ev-id");
+      if (!id._touched) id.value = slugify(e.target.value) + "-" + new Date().getFullYear();
+    });
+    document.getElementById("new-ev-id").addEventListener("input", e => { e.target._touched = true; });
+    document.getElementById("new-ev-save").addEventListener("click", () => {
+      const name = document.getElementById("new-ev-name").value.trim();
+      if (!name) { showToast("⚠ Event name required"); return; }
+      const id = document.getElementById("new-ev-id").value.trim() || slugify(name) + "-" + new Date().getFullYear();
+      if (EVENTS.find(e => e.id === id)) { showToast("⚠ ID already exists"); return; }
+      const promoter = document.getElementById("new-ev-promoter").value.trim() || "Max Perkins";
+      const date = document.getElementById("new-ev-date").value.trim();
+      EVENTS.push({ id, name, date, promoter, codes: [] });
+      persistEvents(); activeEventId = id; activeCodeId = null;
+      renderAll(); renderManager(); showToast("✓ Event added");
+    });
+
+    // Expand/collapse rows
+    body.querySelectorAll(".event-row-hd").forEach(hd => {
+      hd.addEventListener("click", e => { if (e.target.closest("button")) return; document.getElementById("ev-row-"+hd.dataset.evid).classList.toggle("expanded"); });
+    });
+
+    // Delete event
+    body.querySelectorAll("[data-delete-event]").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        const id = btn.dataset.deleteEvent;
+        if (!confirm(`Delete "${EVENTS.find(e=>e.id===id)?.name}"?`)) return;
+        EVENTS = EVENTS.filter(e => e.id !== id);
+        if (activeEventId === id) { activeEventId = EVENTS[0]?.id ?? null; activeCodeId = EVENTS[0]?.codes[0]?.id ?? null; }
+        persistEvents(); renderAll(); renderManager(); showToast("✓ Event deleted");
+      });
+    });
+
+    // Save event edits
+    body.querySelectorAll("[data-save-event]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.saveEvent; const ev = EVENTS.find(e=>e.id===id);
+        const row = document.getElementById("ev-row-"+id);
+        ev.name     = row.querySelector("[data-ev-field='name']").value.trim() || ev.name;
+        ev.date     = row.querySelector("[data-ev-field='date']").value.trim() || ev.date;
+        ev.promoter = row.querySelector("[data-ev-field='promoter']").value.trim() || ev.promoter;
+        persistEvents(); renderAll(); renderManager();
+        document.getElementById("ev-row-"+id)?.classList.add("expanded");
+        showToast("✓ Event updated");
+      });
+    });
+
+    // Show add-code forms
+    body.querySelectorAll("[data-add-code]").forEach(btn => {
+      btn.addEventListener("click", () => document.getElementById("add-code-form-"+btn.dataset.addCode).classList.toggle("open"));
+    });
+    body.querySelectorAll("[data-cancel-code]").forEach(btn => {
+      btn.addEventListener("click", () => document.getElementById("add-code-form-"+btn.dataset.cancelCode).classList.remove("open"));
+    });
+
+    // Auto-gen code IDs
+    EVENTS.forEach(ev => {
+      const lbl = document.getElementById(`nc-label-${ev.id}`);
+      const cid = document.getElementById(`nc-id-${ev.id}`);
+      if (lbl && cid) lbl.addEventListener("input", e => { if (!cid._touched) cid.value = slugify(ev.id)+"-"+slugify(e.target.value); });
+      if (cid) cid.addEventListener("input", () => { cid._touched = true; });
+    });
+
+    // Save new QR code
+    body.querySelectorAll("[data-save-code]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const evId = btn.dataset.saveCode; const ev = EVENTS.find(e=>e.id===evId);
+        const label = document.getElementById(`nc-label-${evId}`).value.trim();
+        const type  = document.getElementById(`nc-type-${evId}`).value.trim() || "General";
+        const dest  = document.getElementById(`nc-dest-${evId}`).value.trim();
+        const rawId = document.getElementById(`nc-id-${evId}`).value.trim();
+        if (!label) { showToast("⚠ Label required"); return; }
+        if (!dest || !dest.startsWith("http")) { showToast("⚠ Valid URL required"); return; }
+        const id = rawId || slugify(evId)+"-"+slugify(label);
+        if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code ID already exists — edit the ID field"); return; }
+ev.codes.push({ id, label, type, dest });
+        if (!activeCodeId && activeEventId===evId) activeCodeId = id;
+        persistEvents(); renderAll();
+        showToast("✓ QR code added");
+      });
+    });
+
+    // Delete QR code
+    body.querySelectorAll("[data-delete-code]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const codeId = btn.dataset.deleteCode; const evId = btn.dataset.evid;
+        const ev = EVENTS.find(e=>e.id===evId);
+        if (!confirm(`Delete "${ev?.codes.find(c=>c.id===codeId)?.label}"?`)) return;
+ev.codes = ev.codes.filter(c=>c.id!==codeId);
+        if (activeCodeId===codeId) activeCodeId = ev.codes[0]?.id ?? null;
+        persistEvents(); renderAll();
+        showToast("✓ QR code deleted");
+      });
+    });
+
+    // Export / Import
+    document.getElementById("mgr-export").addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(EVENTS,null,2)],{type:"application/json"}));
+      a.download = "qr-events.json"; a.click();
+    });
+    document.getElementById("mgr-import-btn").addEventListener("click", () => {
+      const a = document.getElementById("mgr-import-area"); const b = document.getElementById("mgr-import-actions");
+      const v = a.style.display !== "none"; a.style.display = v?"none":"block"; b.style.display = v?"none":"flex";
+    });
+    document.getElementById("mgr-import-cancel").addEventListener("click", () => {
+      document.getElementById("mgr-import-area").style.display = "none";
+      document.getElementById("mgr-import-actions").style.display = "none";
+    });
+    document.getElementById("mgr-import-confirm").addEventListener("click", () => {
+      try {
+        const data = JSON.parse(document.getElementById("mgr-import-area").value);
+        if (!Array.isArray(data)) throw new Error("Expected array");
+        EVENTS = data; persistEvents();
+        activeEventId = EVENTS[0]?.id ?? null; activeCodeId = EVENTS[0]?.codes[0]?.id ?? null;
+        renderAll(); renderManager(); showToast("✓ Imported");
+      } catch(e) { showToast("⚠ Invalid JSON: "+e.message); }
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // RENDER — Header
+  // ══════════════════════════════════════════════════════════════
+  function renderHeader() {
+    const ev = activeEvent();
+    if (!ev) return;
+    document.getElementById("hdr-title").textContent  = ev.name;
+    document.getElementById("hdr-badge").textContent  = ev.date;
+    document.getElementById("hdr-sub").innerHTML =
+      `QR Code Scan Tracker &mdash; ${ev.promoter}`;
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // RENDER — QR code grid (one tile per code in this event)
+  // ══════════════════════════════════════════════════════════════
+  function renderQRGrid() {
+    const ev = activeEvent();
+    const grid = document.getElementById("qr-grid");
+    if (!ev) { grid.innerHTML = ""; return; }
+
+    grid.innerHTML = ev.codes.map(code => `
+      <div class="qr-tile ${code.id === activeCodeId ? "active" : ""}" data-code="${code.id}">
+        <div class="qr-tile-box" id="qrtile-${code.id}"></div>
+        <div class="qr-tile-label">${code.label}</div>
+        <div class="qr-tile-type">${code.type}</div>
+        <div class="qr-tile-count" id="tile-count-${code.id}">—</div>
+        <small style="color:#475569;font-size:0.7rem">total scans</small>
+      </div>
+    `).join("");
+
+// Generate QR codes into each tile via image API
+    ev.codes.forEach(code => {
+      const el = document.getElementById(`qrtile-${code.id}`);
+      if (!el) return;
+      const url = trackingUrl(code);
+      const img = document.createElement("img");
+      img.src = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(url)}`;
+      img.width = 120; img.height = 120;
+      img.alt = code.label;
+      el.appendChild(img);
+    });
+
+    // Tile click → select code & reload chart
+    grid.querySelectorAll(".qr-tile").forEach(tile => {
+      tile.addEventListener("click", () => {
+        activeCodeId = tile.dataset.code;
+        renderQRGrid();
+        renderQRDetail();
+        loadStats(activeDays);
+      });
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // RENDER — Selected QR detail panel
+  // ══════════════════════════════════════════════════════════════
+  function renderQRDetail() {
+    const code   = activeCode();
+    const detail = document.getElementById("qr-detail");
+    if (!code) { detail.style.display = "none"; return; }
+    detail.style.display = "flex";
+    const url = trackingUrl(code);
+
+    detail.innerHTML = `
+      <div class="qr-box" style="background:#fff;border-radius:0.75rem;padding:14px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;">
+        <div id="qr-detail-code"></div>
+        <button class="btn-download" id="btn-download-qr">Download PNG</button>
+      </div>
+      <div class="qr-info">
+        <h2>${code.label}</h2>
+        <dl>
+          <dt>Event</dt>     <dd>${activeEvent().name}</dd>
+          <dt>Date</dt>      <dd>${activeEvent().date}</dd>
+          <dt>Type</dt>      <dd>${code.type}</dd>
+          <dt>Tracks to</dt> <dd style="word-break:break-all;font-size:0.78rem">${url}</dd>
+        </dl>
+        <div class="note">
+          <strong>Live tracking active.</strong> Each scan hits the Cloudflare Worker,
+          increments this code's count in KV by its <code>qr</code> ID, then redirects
+          to the destination. Data refreshes each time this dashboard is opened.
+        </div>
+      </div>
+    `;
+
+// Render large QR into detail panel via image API
+    const detailImg = document.createElement("img");
+    detailImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`;
+    detailImg.width = 180; detailImg.height = 180;
+    detailImg.alt = code.label;
+    document.getElementById("qr-detail-code").appendChild(detailImg);
+
+document.getElementById("btn-download-qr").addEventListener("click", async () => {
+      try {
+        const res = await fetch(detailImg.src);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = `${code.id}.png`;
+        link.href = blobUrl;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (err) {
+        console.error("QR download failed:", err);
+        alert("Download failed — try right-clicking the QR image and saving manually.");
+      }
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // STATS — Load from Worker for the active QR code
+  // ══════════════════════════════════════════════════════════════
+  async function loadStats(numDays = 30) {
+    const code = activeCode();
+    if (!code) return;
+
+    // NOTE: Your Worker's /stats endpoint needs to accept ?qr=<id>
+    // to return per-code data. Until then, it returns aggregate totals.
+    const url = `${WORKER_URL}/stats?days=${numDays}&qr=${encodeURIComponent(code.id)}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { days, counts, total, today: todayCount } = await res.json();
+
+      const labels = days.map(d =>
+        new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      );
+
+      document.getElementById("stat-today").textContent = todayCount;
+      document.getElementById("stat-7d").textContent    = counts.slice(-7).reduce((a,b) => a+b, 0);
+      document.getElementById("stat-30d").textContent   = total;
+      document.getElementById("last-updated").textContent =
+        `Live data · ${code.label} · Last refreshed ` + new Date().toLocaleString();
+
+      // Update tile total count for the active code
+      const tileCount = document.getElementById(`tile-count-${code.id}`);
+      if (tileCount) tileCount.textContent = total;
+
+      document.getElementById("chart-title").textContent = `Daily Scans — ${code.label}`;
+
+      if (chart) chart.destroy();
+      chart = new Chart(document.getElementById("scansChart").getContext("2d"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "Scans", data: counts,
+            backgroundColor: "rgba(125, 211, 252, 0.55)",
+            borderColor:     "rgba(125, 211, 252, 0.9)",
+            borderWidth: 1, borderRadius: 4 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false },
+            tooltip: { callbacks: { label: c => ` ${c.parsed.y} scans` } } },
+          scales: {
+            x: { ticks: { color: "#64748b", maxTicksLimit: 10, font: { size: 11 } }, grid: { color: "#1e293b" } },
+            y: { beginAtZero: true, ticks: { color: "#64748b", font: { size: 11 } }, grid: { color: "#263347" } }
+          }
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      document.getElementById("last-updated").textContent = "Could not load live data — check WORKER_URL";
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // RANGE BUTTONS — now use data attributes instead of inline onclick
+  // ══════════════════════════════════════════════════════════════
+  document.getElementById("range-btns").addEventListener("click", e => {
+    const btn = e.target.closest(".range-btn");
+    if (!btn) return;
+    document.querySelectorAll(".range-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeDays = parseInt(btn.dataset.days, 10);
+    loadStats(activeDays);
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // BOOT
+  // ══════════════════════════════════════════════════════════════
+  function renderAll() {
+    renderTabs();
+    renderHeader();
+    renderQRGrid();
+    renderQRDetail();
+    loadStats(activeDays);
+  }
+
+  renderAll();
+</script>
+</body>
+</html>
