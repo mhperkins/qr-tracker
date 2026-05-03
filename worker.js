@@ -7,6 +7,21 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
 if (url.pathname === '/track') {
+
+      // ── Legacy passthrough: printed flyer uses ?dest= directly ──
+      const legacyDest = url.searchParams.get('dest');
+      if (legacyDest) {
+        if (!legacyDest.startsWith('https://')) {
+          return new Response('Invalid destination.', { status: 400 });
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const key   = `legacy-flyer:day:${today}`;
+        const count = parseInt((await env.QR_KV.get(key)) || '0') + 1;
+        await env.QR_KV.put(key, String(count));
+        return Response.redirect(legacyDest, 302);
+      }
+      // ── End legacy passthrough ──
+
       const qr    = url.searchParams.get('qr') || 'default';
       const today = new Date().toISOString().slice(0, 10);
       const key   = `${qr}:day:${today}`;

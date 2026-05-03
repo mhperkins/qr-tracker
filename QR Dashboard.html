@@ -335,6 +335,13 @@ const DEFAULT_EVENTS = [
           type:  "Marketing",
           dest:  "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx",
         },
+{
+          id:        "legacy-flyer",
+          label:     "Printed Flyer (Legacy)",
+          type:      "Physical — Legacy Route",
+          dest:      "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx",
+          legacyUrl: `${WORKER_URL}/track?dest=https://partiful.com/e/svVWfAfGSLvT7UkI9hwx`,
+        },
         // Add more QR codes for this event here:
         // { id: "gt25-flyer-mission", label: "Flyer — Mission District", type: "Physical — Flyer", dest: "https://..." },
         // { id: "gt25-email",         label: "Email Blast",              type: "Email",           dest: "https://..." },
@@ -367,8 +374,10 @@ const DEFAULT_EVENTS = [
   // ══════════════════════════════════════════════════════════════
   const activeEvent = () => EVENTS.find(e => e.id === activeEventId);
   const activeCode  = () => activeEvent()?.codes.find(c => c.id === activeCodeId);
-const trackingUrl = (code) =>
-    `${WORKER_URL}/track?qr=${encodeURIComponent(code.id)}`;
+  const trackingUrl = (code) =>
+    code.legacyUrl
+      ? code.legacyUrl
+      : `${WORKER_URL}/track?qr=${encodeURIComponent(code.id)}`;
 
   async function pushDestination(codeId, dest) {
     const res = await fetch(
