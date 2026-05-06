@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QR Scan Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <!-- qrcodejs removed — using qrserver.com image API instead -->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -306,12 +307,15 @@
 
 <script>
 // ══════════════════════════════════════════════════════════════
+  // SUPABASE CLIENT
+  // ══════════════════════════════════════════════════════════════
+  const SUPABASE_URL  = "https://ixdnmjchvjzytyhmripc.supabase.co";
+  const SUPABASE_KEY  = "sb_publishable_Q6wYntGI_KUmlJBR0i0jPQ_ZO-0uxfI";
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ══════════════════════════════════════════════════════════════
   // PERSISTENCE
   // ══════════════════════════════════════════════════════════════
-  const STORAGE_KEY = "qr_dashboard_events";
-  function persistEvents() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(EVENTS)); } catch(e) {} }
-  function loadPersistedEvents() { try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch(e) {} return null; }
-
   function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
   function showToast(msg) { const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2500); }
 
@@ -322,52 +326,67 @@
   // ══════════════════════════════════════════════════════════════
   const WORKER_URL = "https://qr-tracker.maxwellhperkins.workers.dev";
 
-const DEFAULT_EVENTS = [
-    {
-      id:       "groove-theory-2026",
-      name:     "Groove Theory",
-      date:     "June 14, 2026",
-      promoter: "Maxwell Henry",
-      codes: [
-        {
-          id:    "gt25-GT-flyer",
-          label: "Concert Flyer",
-          type:  "Marketing",
-          dest:  "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx",
-        },
-{
-          id:        "legacy-flyer",
-          label:     "Printed Flyer (Legacy)",
-          type:      "Physical — Legacy Route",
-          dest:      "https://partiful.com/e/svVWfAfGSLvT7UkI9hwx",
-          legacyUrl: `${WORKER_URL}/track?dest=https://partiful.com/e/svVWfAfGSLvT7UkI9hwx`,
-        },
-        // Add more QR codes for this event here:
-        // { id: "gt25-flyer-mission", label: "Flyer — Mission District", type: "Physical — Flyer", dest: "https://..." },
-        // { id: "gt25-email",         label: "Email Blast",              type: "Email",           dest: "https://..." },
-      ],
-    },
-    // Add more events here:
-    // {
-    //   id: "next-event-2026",
-    //   name: "Next Event",
-    //   date: "August 10, 2026",
-    //   promoter: "Max Perkins",
-    //   codes: [
-    //     { id: "ne25-ig-bio", label: "Instagram Bio", type: "Social — Instagram", dest: "https://..." },
-    //   ],
-    // },
-  ];
-
 // ══════════════════════════════════════════════════════════════
   // STATE
   // ══════════════════════════════════════════════════════════════
-  let EVENTS = loadPersistedEvents() ?? DEFAULT_EVENTS;
-  let activeEventId = EVENTS[0]?.id ?? null;
-  let activeCodeId  = EVENTS[0]?.codes[0]?.id ?? null;
+  let EVENTS        = [];
+  let activeEventId = null;
+  let activeCodeId  = null;
   let activeDays    = 30;
   let chart         = null;
   let qrInstances   = {}; // keyed by code.id
+
+  // ══════════════════════════════════════════════════════════════
+  // BOOT — Supabase
+  // ══════════════════════════════════════════════════════════════
+  async function bootFromSupabase() {
+    document.getElementById("hdr-title").textContent = "Loading…";
+    try {
+      const [evRes, orphanRes] = await Promise.all([
+        supabaseClient.from('qr_events').select('*, qr_codes(*)').order('created_at', { ascending: true }),
+        supabaseClient.from('qr_codes').select('*').is('event_id', null),
+      ]);
+      if (evRes.error) throw evRes.error;
+      if (orphanRes.error) throw orphanRes.error;
+
+      EVENTS = evRes.data.map(row => ({
+        id:       row.id,
+        name:     row.name,
+        date:     row.event_date,
+        promoter: row.promoter,
+        codes:    (row.qr_codes ?? []).map(c => ({
+          id:        c.id,
+          label:     c.label,
+          type:      c.type,
+          dest:      c.dest,
+          legacyUrl: c.legacy_url ?? undefined,
+        }))
+      }));
+
+      if (orphanRes.data.length > 0) {
+        EVENTS.push({
+          id:       '__uncategorized__',
+          name:     'Uncategorized',
+          date:     '',
+          promoter: '',
+          codes:    orphanRes.data.map(c => ({
+            id:        c.id,
+            label:     c.label,
+            type:      c.type,
+            dest:      c.dest,
+            legacyUrl: c.legacy_url ?? undefined,
+          }))
+        });
+      }
+
+      activeEventId = EVENTS[0]?.id ?? null;
+      activeCodeId  = EVENTS[0]?.codes[0]?.id ?? null;
+      renderAll();
+    } catch(e) {
+      console.error("Supabase boot failed:", e);
+      document.getElementById("hdr-title").textContent = "⚠ Failed to load — check Supabase credentials";
+    }
+  }
 
   // ══════════════════════════════════════════════════════════════
   // HELPERS
@@ -492,8 +511,14 @@ activeEventId = btn.dataset.event;
                           <button class="mgr-btn danger" style="flex-shrink:0;font-size:0.72rem;padding:0.2rem 0.6rem" data-delete-code="${code.id}" data-evid="${ev.id}">Delete</button>
                         </div>
                         <div style="display:flex;gap:0.5rem;align-items:center">
-                          <input class="mgr-input" id="dest-input-${code.id}" value="${code.dest}" placeholder="https://…" style="flex:1;font-size:0.78rem;padding:0.35rem 0.6rem"/>
+                          <input class="mgr-input" id="dest-input-${code.id}" value="${code.dest||''}" placeholder="https://…" style="flex:1;font-size:0.78rem;padding:0.35rem 0.6rem"/>
                           <button class="mgr-btn primary" style="flex-shrink:0;font-size:0.72rem;padding:0.35rem 0.7rem;white-space:nowrap" data-update-dest="${code.id}">↑ Update Live</button>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;align-items:center">
+                          <select class="mgr-input" id="move-select-${code.id}" style="flex:1;font-size:0.78rem;padding:0.35rem 0.6rem">
+                            ${EVENTS.filter(e => e.id !== ev.id).map(e => `<option value="${e.id}">${e.name}</option>`).join("")}
+                          </select>
+                          <button class="mgr-btn" style="flex-shrink:0;font-size:0.72rem;padding:0.35rem 0.7rem;white-space:nowrap" data-move-code="${code.id}" data-from-evid="${ev.id}">→ Move</button>
                         </div>
                       </div>`).join("")}
               </div>
@@ -503,7 +528,7 @@ activeEventId = btn.dataset.event;
       </div>
       <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #1e293b">
         <div class="mgr-section-hd" style="margin-top:0"><span class="mgr-section-title">Data</span></div>
-        <p style="font-size:0.78rem;color:#64748b;margin-bottom:0.75rem;line-height:1.6">Events and QR codes are saved in localStorage. Export to back up.</p>
+<p style="font-size:0.78rem;color:#64748b;margin-bottom:0.75rem;line-height:1.6">Events and QR codes are stored in Supabase. Redirect destinations are synced to Cloudflare KV on every write.</p>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
           <button class="mgr-btn success" id="mgr-export">↓ Export JSON</button>
           <button class="mgr-btn" id="mgr-import-btn">↑ Import JSON</button>
@@ -524,16 +549,29 @@ activeEventId = btn.dataset.event;
       if (!id._touched) id.value = slugify(e.target.value) + "-" + new Date().getFullYear();
     });
     document.getElementById("new-ev-id").addEventListener("input", e => { e.target._touched = true; });
-    document.getElementById("new-ev-save").addEventListener("click", () => {
+    document.getElementById("new-ev-save").addEventListener("click", async () => {
       const name = document.getElementById("new-ev-name").value.trim();
       if (!name) { showToast("⚠ Event name required"); return; }
       const id = document.getElementById("new-ev-id").value.trim() || slugify(name) + "-" + new Date().getFullYear();
       if (EVENTS.find(e => e.id === id)) { showToast("⚠ ID already exists"); return; }
       const promoter = document.getElementById("new-ev-promoter").value.trim() || "Max Perkins";
       const date = document.getElementById("new-ev-date").value.trim();
-      EVENTS.push({ id, name, date, promoter, codes: [] });
-      persistEvents(); activeEventId = id; activeCodeId = null;
-      renderAll(); renderManager(); showToast("✓ Event added");
+      const newEvent = { id, name, date, promoter, codes: [] };
+      EVENTS.push(newEvent);
+      activeEventId = id; activeCodeId = null;
+      renderAll(); renderManager();
+      try {
+        const { error } = await supabaseClient.from('qr_events').insert({
+          id, name, event_date: date, promoter,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+        showToast("✓ Event added");
+      } catch(e) {
+        console.error(e);
+        showToast("✓ Event added — ⚠ Supabase sync failed");
+      }
     });
 
     // Expand/collapse rows
@@ -543,27 +581,45 @@ activeEventId = btn.dataset.event;
 
     // Delete event
     body.querySelectorAll("[data-delete-event]").forEach(btn => {
-      btn.addEventListener("click", e => {
+      btn.addEventListener("click", async e => {
         e.stopPropagation();
         const id = btn.dataset.deleteEvent;
         if (!confirm(`Delete "${EVENTS.find(e=>e.id===id)?.name}"?`)) return;
         EVENTS = EVENTS.filter(e => e.id !== id);
         if (activeEventId === id) { activeEventId = EVENTS[0]?.id ?? null; activeCodeId = EVENTS[0]?.codes[0]?.id ?? null; }
-        persistEvents(); renderAll(); renderManager(); showToast("✓ Event deleted");
+        renderAll(); renderManager();
+        try {
+          await supabaseClient.from('qr_codes').update({ event_id: null }).eq('event_id', id);
+          const { error } = await supabaseClient.from('qr_events').delete().eq('id', id);
+          if (error) throw error;
+          showToast("✓ Event deleted");
+        } catch(e) {
+          console.error(e);
+          showToast("✓ Event deleted — ⚠ Supabase sync failed");
+        }
       });
     });
 
     // Save event edits
     body.querySelectorAll("[data-save-event]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const id = btn.dataset.saveEvent; const ev = EVENTS.find(e=>e.id===id);
         const row = document.getElementById("ev-row-"+id);
         ev.name     = row.querySelector("[data-ev-field='name']").value.trim() || ev.name;
         ev.date     = row.querySelector("[data-ev-field='date']").value.trim() || ev.date;
         ev.promoter = row.querySelector("[data-ev-field='promoter']").value.trim() || ev.promoter;
-        persistEvents(); renderAll(); renderManager();
+        renderAll(); renderManager();
         document.getElementById("ev-row-"+id)?.classList.add("expanded");
-        showToast("✓ Event updated");
+        try {
+          const { error } = await supabaseClient.from('qr_events')
+            .update({ name: ev.name, event_date: ev.date, promoter: ev.promoter, updated_at: new Date().toISOString() })
+            .eq('id', id);
+          if (error) throw error;
+          showToast("✓ Event updated");
+        } catch(e) {
+          console.error(e);
+          showToast("✓ Event updated — ⚠ Supabase sync failed");
+        }
       });
     });
 
@@ -585,7 +641,7 @@ activeEventId = btn.dataset.event;
 
     // Save new QR code
     body.querySelectorAll("[data-save-code]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const evId = btn.dataset.saveCode; const ev = EVENTS.find(e=>e.id===evId);
         const label = document.getElementById(`nc-label-${evId}`).value.trim();
         const type  = document.getElementById(`nc-type-${evId}`).value.trim() || "General";
@@ -594,13 +650,24 @@ activeEventId = btn.dataset.event;
         if (!label) { showToast("⚠ Label required"); return; }
         if (!dest || !dest.startsWith("http")) { showToast("⚠ Valid URL required"); return; }
         const id = rawId || slugify(evId)+"-"+slugify(label);
-if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code ID already exists — edit the ID field"); return; }
-        ev.codes.push({ id, label, type, dest });
+        if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code ID already exists — edit the ID field"); return; }
+        const newCode = { id, label, type, dest };
+        ev.codes.push(newCode);
         if (!activeCodeId && activeEventId===evId) activeCodeId = id;
-        persistEvents(); renderAll();
-        pushDestination(id, dest)
-          .then(() => showToast("✓ QR code added & destination live"))
-          .catch(() => showToast("✓ QR code added — ⚠ Worker sync failed, check WORKER_URL"));
+        renderAll();
+        try {
+          const { error } = await supabaseClient.from('qr_codes').insert({
+            id, event_id: evId, label, type, dest,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          if (error) throw error;
+          await pushDestination(id, dest);
+          showToast("✓ QR code added & synced");
+        } catch(e) {
+          console.error(e);
+          showToast("✓ QR code added — ⚠ Supabase sync failed");
+        }
       });
     });
 
@@ -614,27 +681,66 @@ if (EVENTS.flatMap(e=>e.codes.map(c=>c.id)).includes(id)) { showToast("⚠ Code 
         const ev = EVENTS.find(e => e.codes.some(c => c.id === codeId));
         const code = ev?.codes.find(c => c.id === codeId);
         if (!code) return;
+        code.dest = newDest;
+        renderQRDetail();
         try {
+          const { error } = await supabaseClient.from('qr_codes')
+            .update({ dest: newDest, updated_at: new Date().toISOString() })
+            .eq('id', codeId);
+          if (error) throw error;
           await pushDestination(codeId, newDest);
-          code.dest = newDest;
-          persistEvents();
           showToast("✓ Destination updated live");
-        } catch {
-          showToast("⚠ Worker sync failed — destination not updated");
+        } catch(e) {
+          console.error(e);
+          showToast("⚠ Sync failed — destination not updated");
         }
       });
     });
 
     // Delete QR code
     body.querySelectorAll("[data-delete-code]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const codeId = btn.dataset.deleteCode; const evId = btn.dataset.evid;
         const ev = EVENTS.find(e=>e.id===evId);
         if (!confirm(`Delete "${ev?.codes.find(c=>c.id===codeId)?.label}"?`)) return;
-ev.codes = ev.codes.filter(c=>c.id!==codeId);
+        ev.codes = ev.codes.filter(c=>c.id!==codeId);
         if (activeCodeId===codeId) activeCodeId = ev.codes[0]?.id ?? null;
-        persistEvents(); renderAll();
-        showToast("✓ QR code deleted");
+        renderAll(); renderManager();
+        try {
+          const { error } = await supabaseClient.from('qr_codes').delete().eq('id', codeId);
+          if (error) throw error;
+          showToast("✓ QR code deleted");
+        } catch(e) {
+          console.error(e);
+          showToast("✓ QR code deleted — ⚠ Supabase sync failed");
+        }
+      });
+    });
+
+    // Move QR code to another event
+    body.querySelectorAll("[data-move-code]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const codeId  = btn.dataset.moveCode;
+        const fromId  = btn.dataset.fromEvid;
+        const toId    = document.getElementById(`move-select-${codeId}`).value;
+        if (!toId || toId === fromId) { showToast("⚠ Select a different event"); return; }
+        const fromEv  = EVENTS.find(e => e.id === fromId);
+        const toEv    = EVENTS.find(e => e.id === toId);
+        const code    = fromEv?.codes.find(c => c.id === codeId);
+        if (!code || !toEv) return;
+        fromEv.codes  = fromEv.codes.filter(c => c.id !== codeId);
+        toEv.codes.push(code);
+        renderAll(); renderManager();
+        try {
+          const { error } = await supabaseClient.from('qr_codes')
+            .update({ event_id: toId, updated_at: new Date().toISOString() })
+            .eq('id', codeId);
+          if (error) throw error;
+          showToast(`✓ Moved to ${toEv.name}`);
+        } catch(e) {
+          console.error(e);
+          showToast(`✓ Moved to ${toEv.name} — ⚠ Supabase sync failed`);
+        }
       });
     });
 
@@ -652,14 +758,27 @@ ev.codes = ev.codes.filter(c=>c.id!==codeId);
       document.getElementById("mgr-import-area").style.display = "none";
       document.getElementById("mgr-import-actions").style.display = "none";
     });
-    document.getElementById("mgr-import-confirm").addEventListener("click", () => {
+
+    document.getElementById("mgr-import-confirm").addEventListener("click", async () => {
       try {
         const data = JSON.parse(document.getElementById("mgr-import-area").value);
         if (!Array.isArray(data)) throw new Error("Expected array");
-        EVENTS = data; persistEvents();
+        EVENTS = data;
         activeEventId = EVENTS[0]?.id ?? null; activeCodeId = EVENTS[0]?.codes[0]?.id ?? null;
-        renderAll(); renderManager(); showToast("✓ Imported");
-      } catch(e) { showToast("⚠ Invalid JSON: "+e.message); }
+        renderAll(); renderManager();
+        const evRows   = data.map(ev => ({ id: ev.id, name: ev.name, event_date: ev.date, promoter: ev.promoter, updated_at: new Date().toISOString() }));
+        const codeRows = data.flatMap(ev => ev.codes.map(c => ({ id: c.id, event_id: ev.id, label: c.label, type: c.type, dest: c.dest, legacy_url: c.legacyUrl ?? null, updated_at: new Date().toISOString() })));
+        const [evRes, codeRes] = await Promise.all([
+          supabaseClient.from('qr_events').upsert(evRows),
+          supabaseClient.from('qr_codes').upsert(codeRows),
+        ]);
+        if (evRes.error) throw evRes.error;
+        if (codeRes.error) throw codeRes.error;
+        showToast("✓ Imported & synced to Supabase");
+      } catch(e) {
+        console.error(e);
+        showToast("⚠ Import failed: " + e.message);
+      }
     });
   }
 
@@ -846,13 +965,21 @@ document.getElementById("btn-download-qr").addEventListener("click", async () =>
   // ══════════════════════════════════════════════════════════════
   function renderAll() {
     renderTabs();
+    if (!activeEvent()) {
+      document.getElementById("hdr-title").textContent = "No events found";
+      document.getElementById("hdr-sub").textContent   = "Add an event in Manage Events to get started";
+      document.getElementById("hdr-badge").textContent = "—";
+      document.getElementById("qr-grid").innerHTML     = "";
+      document.getElementById("qr-detail").style.display = "none";
+      return;
+    }
     renderHeader();
     renderQRGrid();
     renderQRDetail();
     loadStats(activeDays);
   }
 
-  renderAll();
+  bootFromSupabase();
 </script>
 </body>
 </html>

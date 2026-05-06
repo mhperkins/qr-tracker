@@ -56,6 +56,30 @@ if (url.pathname === '/stats') {
       return new Response(JSON.stringify({ days, counts, total, today: counts[counts.length - 1] }), { headers: CORS });
     }
 
+    // ── GET /codes — list all QR codes that have a :dest key ──
+    if (url.pathname === '/codes' && request.method === 'GET') {
+      const list = await env.QR_KV.list();
+      const destKeys = list.keys.filter(k => k.name.endsWith(':dest'));
+      const codes = await Promise.all(destKeys.map(async k => {
+        const id   = k.name.slice(0, -5); // strip ':dest'
+        const dest = await env.QR_KV.get(k.name);
+        const meta = await env.QR_KV.get(`meta:${id}`);
+        return meta ? JSON.parse(meta) : { id, dest, label: id, type: 'Uncategorized', eventId: null };
+      }));
+      return new Response(JSON.stringify(codes), { headers: CORS });
+    }
+
+    // ── PUT /codes — write full metadata blob for a code ──
+    if (url.pathname === '/codes' && request.method === 'PUT') {
+      let body;
+      try { body = await request.json(); } catch { return new Response('Invalid JSON', { status: 400 }); }
+      const { id } = body;
+      if (!id) return new Response('Missing id', { status: 400 });
+      await env.QR_KV.put(`meta:${id}`, JSON.stringify(body));
+      await env.QR_KV.put(`${id}:dest`, body.dest);
+      return new Response(JSON.stringify({ ok: true }), { headers: CORS });
+    }
+
     return new Response('Not found', { status: 404 });
   },
 };
