@@ -8,28 +8,33 @@ export default {
 
 if (url.pathname === '/track') {
 
-      // ── Legacy passthrough: printed flyer uses ?dest= directly ──
-      const legacyDest = url.searchParams.get('dest');
-      if (legacyDest) {
-        if (!legacyDest.startsWith('https://')) {
+      const qr        = url.searchParams.get('qr');
+      const inlineDest = url.searchParams.get('dest');
+      const today     = new Date().toISOString().slice(0, 10);
+
+      // ── Dynamic code: ?qr= present (with or without ?dest=) ──
+      if (qr) {
+        const key   = `${qr}:day:${today}`;
+        const count = parseInt((await env.QR_KV.get(key)) || '0') + 1;
+        await env.QR_KV.put(key, String(count));
+        // Use inline ?dest= if present, otherwise fall back to KV lookup
+        const dest  = inlineDest || await env.QR_KV.get(`${qr}:dest`);
+        if (!dest) return new Response('QR destination not configured.', { status: 404 });
+        return Response.redirect(dest, 302);
+      }
+
+      // ── Legacy passthrough: ?dest= only, no ?qr= (Groove Theory printed flyer) ──
+      if (inlineDest) {
+        if (!inlineDest.startsWith('https://')) {
           return new Response('Invalid destination.', { status: 400 });
         }
-        const today = new Date().toISOString().slice(0, 10);
         const key   = `legacy-flyer:day:${today}`;
         const count = parseInt((await env.QR_KV.get(key)) || '0') + 1;
         await env.QR_KV.put(key, String(count));
-        return Response.redirect(legacyDest, 302);
+        return Response.redirect(inlineDest, 302);
       }
-      // ── End legacy passthrough ──
 
-      const qr    = url.searchParams.get('qr') || 'default';
-      const today = new Date().toISOString().slice(0, 10);
-      const key   = `${qr}:day:${today}`;
-      const count = parseInt((await env.QR_KV.get(key)) || '0') + 1;
-      await env.QR_KV.put(key, String(count));
-      const dest  = await env.QR_KV.get(`${qr}:dest`);
-      if (!dest) return new Response('QR destination not configured.', { status: 404 });
-      return Response.redirect(dest, 302);
+      return new Response('QR destination not configured.', { status: 404 });
     }
 
     if (url.pathname === '/destination') {
