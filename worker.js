@@ -1,10 +1,15 @@
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+const CORS_PREFLIGHT = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
+    if (request.method === 'OPTIONS') return new Response(null, { headers: CORS_PREFLIGHT });
 
 if (url.pathname === '/track') {
 
